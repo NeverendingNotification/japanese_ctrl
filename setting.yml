@@ -6,7 +6,7 @@ data_params:
   csv_files: ["data/aozora.csv", "data/wiki.csv", "data/jesc.csv"]
   ctrl_codes: ["青空", "辞書", "訳"]
   weights: [0.4, 0.5, 0.1]
-  sp_file: "sp.model"
+  sp_file: "data/sp.model"
   col_name: "text"
   batch_size: 16
 

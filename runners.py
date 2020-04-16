@@ -95,7 +95,6 @@ class Trainer:
         else:
             raise NotImplementedError()
         print("optimizer : ", self.optimizer)
-        self.lr = lr
         self.num_epochs = num_epochs
         self.log_dir = log_dir
         os.makedirs(self.log_dir, exist_ok=True)
