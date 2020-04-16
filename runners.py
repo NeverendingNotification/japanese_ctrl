@@ -23,7 +23,8 @@ def save_check_points(log_dir, model, optimizer, step, epoch):
 
 def train(model, optimizer, num_epochs,
         train_loader, log_dir, valid_loader=None, device="cpu", writer=None, scheduler=None,
-        ignore_index=-100, log_period=20, tester=None, iter_count=1, start_epoch=1, check_point_path=None):
+        ignore_index=-100, log_period=20, tester=None, iter_count=1, start_epoch=1, check_point_path=None,
+        save_period=1, test_period=1):
     if check_point_path is not None:
         print("loading checkpoint from ", check_point_path)
         check_point_path = torch.load(check_point_path)
@@ -59,9 +60,10 @@ def train(model, optimizer, num_epochs,
         print("Epoch {}/{} : train loss {:.4f}".format(
             epoch, num_epochs, tr_loss))
         loss_df.append((epoch, tr_loss))
-        save_check_points(log_dir, model, optimizer, iter_count, epoch)
+        if epoch % save_period == 0:
+            save_check_points(log_dir, model, optimizer, iter_count, epoch)
 
-        if tester is not None:
+        if (epoch % test_period == 0) and (tester is not None):
             tester(train_loader.dataset, model, device, "test_{:04d}.csv".format(epoch))
         if writer is not None:
             writer.add_scalars("loss" ,{ 
