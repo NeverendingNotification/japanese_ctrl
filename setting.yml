@@ -1,0 +1,29 @@
+main_params:
+  log_dir: "logs/test1"
+  seed: 12
+
+data_params:
+  csv_files: ["data/aozora.csv", "data/wiki.csv", "data/jesc.csv"]
+  ctrl_codes: ["青空", "辞書", "訳"]
+  weights: [0.4, 0.5, 0.1]
+  sp_file: "sp.model"
+  col_name: "text"
+  batch_size: 16
+
+
+model_params:
+  transformer_name: "ctrl"
+  config_params:
+    "n_embd": 384
+    "vocab_size": 30000
+    "n_layer": 4
+  n_gpus: 1
+
+
+run_params:
+  train:
+    num_epochs: 30
+    iter_warmup_period: 1000
+    test_file: "data/sample.csv"
+#    check_point_path: "logs/test1/checkpoint/checkpoint_00004221.pth"
+   
