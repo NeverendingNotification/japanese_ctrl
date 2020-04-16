@@ -10,3 +10,9 @@ python ライブラリ
 - sentencepiece==0.1.85
 - transformers==2.8.0
 
+### 実行方法
+
+```
+python main.py
+```
+デフォルトでsetting.ymlが設定ファイルとして利用される。  
