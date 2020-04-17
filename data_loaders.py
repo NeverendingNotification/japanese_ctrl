@@ -52,8 +52,8 @@ class CsvSpDataset(Dataset):
     def __getitem__(self, idx):
         text = self.sp.encode_as_ids(self.texts[idx])
         n_text = len(text)
-        if n_text >= self.max_len - 1:
-            i = random.randint(0,  n_text - self.max_len)
+        if n_text > self.max_len - 1:
+            i = random.randint(0,  n_text - self.max_len + 1)
             text = text[i:i+self.max_len-1]
         else:
             text = text + [self.pad_code] * (self.max_len - 1 - n_text)
