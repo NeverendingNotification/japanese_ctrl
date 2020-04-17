@@ -18,13 +18,14 @@ def save_check_points(log_dir, model, optimizer, step, epoch):
         "model": model.state_dict(),
         "optimizer": optimizer.state_dict(),
     }
-    torch.save(check_point, os.path.join(model_dir, "checkpoint_{:08d}.pth".format(step)))
+    torch.save(check_point, os.path.join(model_dir, "checkpoint_{:04d}_{:08d}.pth".format(epoch, step)))
 
 
 def train(model, optimizer, num_epochs,
         train_loader, log_dir, valid_loader=None, device="cpu", writer=None, scheduler=None,
         ignore_index=-100, log_period=20, tester=None, iter_count=1, start_epoch=1, check_point_path=None,
-        save_period=1, test_period=1):
+        save_period=1, test_period=1, save_iter_period=None, test_iter_period=None, accumulate_step=None,
+        scale_accumualte=False):
     if check_point_path is not None:
         print("loading checkpoint from ", check_point_path)
         check_point_path = torch.load(check_point_path)
@@ -33,38 +34,54 @@ def train(model, optimizer, num_epochs,
         iter_count = check_point_path["step"]
         start_epoch = check_point_path["epoch"] + 1
 
+
+
+    loss_factor = 1.0 if (accumulate_step is None) or (not scale_accumualte) else 1.0 / accumulate_step
     criteria = nn.CrossEntropyLoss(ignore_index=ignore_index)
     loss_df = []
     for epoch in range(start_epoch, num_epochs + 1):
         model.train()
         losses = []
+        optimizer.zero_grad()
         with tqdm(train_loader) as prg:
             for x in prg:
                 input_ids = x.to(device)
                 lm_logits, _ = model(input_ids)
                 shift_logits = lm_logits[..., :-1, :].contiguous()
                 shift_labels = input_ids[..., 1:].contiguous()
-                loss = criteria(shift_logits.view(-1, shift_logits.size(-1)), shift_labels.view(-1)) 
-                        
-                optimizer.zero_grad()
-                loss.backward()
-                optimizer.step()
+                loss = criteria(shift_logits.view(-1, shift_logits.size(-1)), shift_labels.view(-1)) * loss_factor
+                loss.backward() 
+                if accumulate_step is None:
+                    optimizer.step()
+                    optimizer.zero_grad()
+                else:
+                    if iter_count % accumulate_step == 0:
+                        optimizer.step()
+                        optimizer.zero_grad()
+
                 losses.append(loss.item())
-                if len(losses) % log_period == 0:
+                if iter_count % log_period == 0:
                     prg.set_description("Epoch {}/{}  Iter {} : loss {:.4f} ".format(epoch, num_epochs, iter_count, np.mean(losses)))
                 iter_count += 1
                 if scheduler is not None:
                     scheduler.step()
+                if save_iter_period is not None and iter_count % save_iter_period == 0:
+                    save_check_points(log_dir, model, optimizer, iter_count, epoch)
+                if (test_iter_period is not None) and (iter_count % test_iter_period == 0) and (tester is not None):
+                    tester(train_loader.dataset, model, device, "test_iter_{:04d}.csv".format(iter_count))
 
         tr_loss = np.mean(losses)
         print("Epoch {}/{} : train loss {:.4f}".format(
             epoch, num_epochs, tr_loss))
         loss_df.append((epoch, tr_loss))
-        if epoch % save_period == 0:
-            save_check_points(log_dir, model, optimizer, iter_count, epoch)
 
-        if (epoch % test_period == 0) and (tester is not None):
+        if (save_period is not None) and (epoch % save_period == 0):
+            save_check_points(log_dir, model, optimizer, iter_count, epoch)
+            pd.DataFrame(loss_df, columns=["epoch", "train_loss"]).set_index("epoch").to_csv(os.path.join(log_dir, "logs.csv"))
+        if (test_period is not None) and (epoch % test_period == 0) and (tester is not None):
             tester(train_loader.dataset, model, device, "test_{:04d}.csv".format(epoch))
+
+
         if writer is not None:
             writer.add_scalars("loss" ,{ 
                 "train_loss":tr_loss,
@@ -140,6 +157,7 @@ class Tester:
         self.max_length = max_length
 
     def __call__(self, dataset, model, device, log_name):
+        model.eval()
         sp_test = dataset.sp
         code_ids = dataset.codes_ids
         ctrl_codes = dataset.ctrl_codes
