@@ -23,9 +23,9 @@ def save_check_points(log_dir, model, optimizer, step, epoch):
 
 def train(model, optimizer, num_epochs,
         train_loader, log_dir, valid_loader=None, device="cpu", writer=None, scheduler=None,
-        ignore_index=-100, log_period=20, tester=None, iter_count=1, start_epoch=1, check_point_path=None,
+        ignore_index=-100, log_period=100, tester=None, iter_count=1, start_epoch=1, check_point_path=None,
         save_period=1, test_period=1, save_iter_period=None, test_iter_period=None, accumulate_step=None,
-        scale_accumualte=False):
+        scale_accumualte=False, with_tqdm=False):
     if check_point_path is not None:
         print("loading checkpoint from ", check_point_path)
         check_point_path = torch.load(check_point_path)
@@ -43,32 +43,38 @@ def train(model, optimizer, num_epochs,
         model.train()
         losses = []
         optimizer.zero_grad()
-        with tqdm(train_loader) as prg:
-            for x in prg:
-                input_ids = x.to(device)
-                lm_logits, _ = model(input_ids)
-                shift_logits = lm_logits[..., :-1, :].contiguous()
-                shift_labels = input_ids[..., 1:].contiguous()
-                loss = criteria(shift_logits.view(-1, shift_logits.size(-1)), shift_labels.view(-1)) * loss_factor
-                loss.backward() 
-                if accumulate_step is None:
+        if with_tqdm:
+            prg = tqdm(train_loader)
+        else:
+            prg = train_loader
+        for x in prg:
+            input_ids = x.to(device)
+            lm_logits, _ = model(input_ids)
+            shift_logits = lm_logits[..., :-1, :].contiguous()
+            shift_labels = input_ids[..., 1:].contiguous()
+            loss = criteria(shift_logits.view(-1, shift_logits.size(-1)), shift_labels.view(-1)) * loss_factor
+            loss.backward() 
+            if accumulate_step is None:
+                optimizer.step()
+                optimizer.zero_grad()
+            else:
+                if iter_count % accumulate_step == 0:
                     optimizer.step()
                     optimizer.zero_grad()
-                else:
-                    if iter_count % accumulate_step == 0:
-                        optimizer.step()
-                        optimizer.zero_grad()
 
-                losses.append(loss.item())
-                if iter_count % log_period == 0:
+            losses.append(loss.item())
+            if iter_count % log_period == 0:
+                if with_tqdm:
                     prg.set_description("Epoch {}/{}  Iter {} : loss {:.4f} ".format(epoch, num_epochs, iter_count, np.mean(losses)))
-                iter_count += 1
-                if scheduler is not None:
-                    scheduler.step()
-                if save_iter_period is not None and iter_count % save_iter_period == 0:
-                    save_check_points(log_dir, model, optimizer, iter_count, epoch)
-                if (test_iter_period is not None) and (iter_count % test_iter_period == 0) and (tester is not None):
-                    tester(train_loader.dataset, model, device, "test_iter_{:04d}.csv".format(iter_count))
+                else:
+                    print("Epoch {}/{}  Iter {} : loss {:.4f} ".format(epoch, num_epochs, iter_count, np.mean(losses)))
+            iter_count += 1
+            if scheduler is not None:
+                scheduler.step()
+            if save_iter_period is not None and iter_count % save_iter_period == 0:
+                save_check_points(log_dir, model, optimizer, iter_count, epoch)
+            if (test_iter_period is not None) and (iter_count % test_iter_period == 0) and (tester is not None):
+                tester(train_loader.dataset, model, device, "test_iter_{:04d}.csv".format(iter_count))
 
         tr_loss = np.mean(losses)
         print("Epoch {}/{} : train loss {:.4f}".format(
