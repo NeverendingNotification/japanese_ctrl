@@ -73,6 +73,7 @@ def train(model, optimizer, num_epochs,
                 scheduler.step()
             if save_iter_period is not None and iter_count % save_iter_period == 0:
                 save_check_points(log_dir, model, optimizer, iter_count, epoch)
+                pd.DataFrame(losses, columns=["batch_loss"]).to_csv(os.path.join(log_dir, "loss_peoch{:05d}.csv".format(epoch)))
             if (test_iter_period is not None) and (iter_count % test_iter_period == 0) and (tester is not None):
                 tester(train_loader.dataset, model, device, "test_iter_{:04d}.csv".format(iter_count))
 

@@ -9,6 +9,60 @@ from torch.utils.data.sampler import BatchSampler
 
 import sentencepiece as sp
 
+
+
+class PadCsvSpDataset(Dataset):
+    def __init__(self, csv_files, ctrl_codes, col_name, sp_file, 
+                max_doc_length=1000, max_token_size=256, pad_code=3, eos_code=2):
+        self.sp = sp.SentencePieceProcessor()
+        self.sp.load(sp_file)
+        
+        codes = []
+        texts = []
+        codes_ids = []
+        ids_codes = {}
+        for code, csv_file in zip(ctrl_codes, csv_files):
+            df = pd.read_csv(csv_file)
+            code_id = self.sp.piece_to_id(code)
+
+            codes_ids.append(code_id)
+            ids_codes[code_id] = code
+            print(csv_file, " 制御コード ", code_id)
+            docs = [] 
+            for doc in df[col_name].values:
+                if isinstance(doc, float):
+                    continue
+                docs.append(doc)
+            texts.extend(docs)
+            codes.extend([code_id]*len(docs))
+        self.texts = texts
+        self.codes = codes
+        self.ctrl_codes = ctrl_codes
+        self.max_len = max_token_size
+        self.n_len = len(self.codes)
+        self.codes_ids = codes_ids
+        self.ids_codes = ids_codes
+        self.pad_code = pad_code
+        self.eos_code = eos_code
+        
+    def __len__(self):
+        return self.n_len
+
+    def __getitem__(self, idx):
+        text = self.sp.encode_as_ids(self.texts[idx])
+        if len(text) < self.max_len - 1:
+            text.append(self.eos_code)
+
+        n_text = len(text)
+        if n_text > self.max_len - 1:
+            text = text[:self.max_len-1]
+        else:
+            text = text + [self.pad_code] * (self.max_len - 1 - n_text)
+
+        text = [self.codes[idx]] + text
+        return torch.Tensor(text).long()
+
+
 class CsvSpDataset(Dataset):
     def __init__(self, csv_files, ctrl_codes, col_name, sp_file, 
                 max_doc_length=1000, max_token_size=256, pad_code=2):
@@ -119,9 +173,17 @@ def get_loaders(params):
     batch_size = data_params["batch_size"]
 
     other_params = data_params.get("other_params", {})
+    csv_type = data_params.get("csv_type", "single")
 
-    train_dataset = CsvSpDataset(csv_files, ctrl_codes,
-                                col_name, sp_file, **other_params)
+    if csv_type == "single":
+        train_dataset = PadCsvSpDataset(csv_files, ctrl_codes,
+                                    col_name, sp_file, **other_params)
+    elif csv_type == "split":
+        train_dataset = CsvSpDataset(csv_files, ctrl_codes,
+                                    col_name, sp_file, **other_params)
+    else:
+        raise NotImplementedError(csv_type) 
+
     sampler = CodeBalancedBatchSampler(
         train_dataset.codes, train_dataset.codes_ids,
         weights, batch_size)
